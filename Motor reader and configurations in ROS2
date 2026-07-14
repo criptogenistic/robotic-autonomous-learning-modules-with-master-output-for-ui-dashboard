@@ -1,0 +1,92 @@
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+from std_msgs.msg import String
+import serial
+import time
+
+class MotorControllerNode(Node):
+    def __init__(self):
+        super().__init__('motor_controller_node')
+        
+        # ROS Parameters for Hardware
+        self.declare_parameter('serial_port', '/dev/ttyACM0')
+        self.declare_parameter('baud_rate', 115200)
+        
+        serial_port = self.get_parameter('serial_port').value
+        baud_rate = self.get_parameter('baud_rate').value
+        
+        # Connect to Hardware (e.g., Arduino running motor firmware)
+        try:
+            self.serial_conn = serial.Serial(serial_port, baud_rate, timeout=1)
+            self.get_logger().info(f"Successfully connected to serial port {serial_port}")
+        except serial.SerialException as e:
+            self.get_logger().error(f"Failed to connect to serial port: {e}")
+            exit(1)
+
+        # ROS 2 Subscribers and Publishers
+        self.cmd_sub = self.create_subscription(
+            Twist,
+            '/cmd_vel',
+            self.cmd_vel_callback,
+            10
+        )
+        
+        self.encoder_pub = self.create_publisher(
+            String,
+            '/encoder_data',
+            10
+        )
+
+        # Timer for reading encoder data (runs at 10 Hz)
+        self.timer = self.create_timer(0.1, self.read_encoder_callback)
+
+    def cmd_vel_callback(self, msg: Twist):
+        """Converts Twist messages (linear and angular) to motor speeds and sends to hardware."""
+        linear_x = msg.linear.x
+        angular_z = msg.angular.z
+        
+        # Differential drive kinematic math
+        # Example conversion: assume robot track width is L = 0.5 meters
+        L = 0.5
+        right_speed = linear_x + (angular_z * L / 2)
+        left_speed = linear_x - (angular_z * L / 2)
+        
+        # Format and send command to the microcontroller
+        # Adjust command format (e.g., "M:100,200\n") based on your Arduino firmware
+        command_str = f"M:{left_speed:.2f},{right_speed:.2f}\n"
+        self.serial_conn.write(command_str.encode('utf-8'))
+
+    def read_encoder_callback(self):
+        """Reads encoder feedback from the microcontroller and publishes it."""
+        if self.serial_conn.in_waiting > 0:
+            try:
+                line = self.serial_conn.readline().decode('utf-8').strip()
+                if line:
+                    # Publish data
+                    encoder_msg = String()
+                    encoder_msg.data = line
+                    self.encoder_pub.publish(encoder_msg)
+            except Exception as e:
+                self.get_logger().warn(f"Error reading from serial: {e}")
+
+    def destroy_node(self):
+        """Clean up connection on shutdown."""
+        self.serial_conn.close()
+        super().destroy_node()
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = MotorControllerNode()
+    
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
