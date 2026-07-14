@@ -1,0 +1,27 @@
+dmp_node:
+  ros__parameters:
+    dmp_type: 'discrete'
+    n_dmps: 3
+    n_bfs: 10
+    dt: 0.01
+    y0: 0.0
+    goal: 1.0
+    ui_port: 5000
+    
+    # Learning parameters
+    learning_rate: 0.01
+    max_iterations: 100
+    
+    # Execution parameters
+    execution_timeout: 60.0
+    error_threshold: 0.01
+    
+    # UI parameters
+    enable_ui: true
+    ui_host: '0.0.0.0'
+    ui_refresh_rate: 2.0
+    
+    # Logging
+    log_trajectories: true
+    log_directory: '/tmp/dmp_logs'
+    max_log_size: 1000
